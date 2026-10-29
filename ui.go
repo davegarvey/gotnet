@@ -55,10 +55,15 @@ type model struct {
 
 	events    []*event // newest first
 	openEvent [numTargets]*event // outage still in progress
-	weak      bool
+	// Session totals count outages as the log does: root causes only, so a
+	// Web outage during an Internet outage is not counted twice.
+	outages  int
+	downtime time.Duration
+	weak     bool
 	captive   bool
 
 	width, height int
+	showHelp      bool
 }
 
 type tickMsg time.Time
@@ -106,11 +111,23 @@ func (m *model) probeAll(now time.Time) tea.Cmd {
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "q", "ctrl+c", "esc":
+		key := msg.String()
+		if key == "ctrl+c" {
+			return m, tea.Quit
+		}
+		// While help is open, any key returns to the display. Probes keep
+		// running underneath, so no history is lost.
+		if m.showHelp {
+			m.showHelp = false
+			return m, nil
+		}
+		switch key {
+		case "q", "esc":
 			return m, tea.Quit
 		case "r":
 			m.reset()
+		case "h", "?":
+			m.showHelp = true
 		}
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
@@ -133,6 +150,7 @@ func (m *model) reset() {
 	}
 	m.events = nil
 	m.openEvent = [numTargets]*event{}
+	m.outages, m.downtime = 0, 0
 	m.start = time.Now()
 }
 
@@ -163,8 +181,73 @@ func (m *model) handleResult(r resultMsg) {
 		if e := m.openEvent[r.t]; e != nil {
 			e.text = fmtDur(dur) + " outage"
 			m.openEvent[r.t] = nil
+			m.outages++
+			m.downtime += dur
 		}
 	}
+}
+
+// sessionOutages returns root-cause outages so far, including any still in
+// progress, and their total duration.
+func (m *model) sessionOutages() (count int, down time.Duration, ongoing bool) {
+	count, down = m.outages, m.downtime
+	for _, e := range m.openEvent {
+		if e != nil {
+			count++
+			down += time.Since(e.at)
+			ongoing = true
+		}
+	}
+	return count, down, ongoing
+}
+
+// viewSession summarises the whole session in one line, dropping detail
+// from the end until it fits.
+func (m *model) viewSession(width int) string {
+	count, down, ongoing := m.sessionOutages()
+
+	countPart := sDim.Render("no outages")
+	downPart := ""
+	if count > 0 {
+		plural := "s"
+		if count == 1 {
+			plural = ""
+		}
+		countPart = sRed.Render(fmt.Sprintf("%d outage%s", count, plural))
+		downPart = sText.Render(fmtDur(down) + " down")
+	}
+	lossPart := ""
+	if s := m.series[targetInternet]; s.sent > 0 {
+		style := sDim
+		if s.lost > 0 {
+			style = sAmber
+		}
+		lossPart = style.Render(fmt.Sprintf("Internet loss %.1f%%", 100*float64(s.lost)/float64(s.sent)))
+	}
+	nowPart := ""
+	if ongoing {
+		nowPart = sRed.Render("down now")
+	}
+
+	// Narrow terminals lose the loss figure first, then the downtime.
+	var line string
+	for _, keep := range [][]string{
+		{countPart, downPart, lossPart, nowPart},
+		{countPart, downPart, nowPart},
+		{countPart, nowPart},
+	} {
+		var parts []string
+		for _, p := range keep {
+			if p != "" {
+				parts = append(parts, p)
+			}
+		}
+		line = sDim.Render(padR("Session", labelW)) + strings.Join(parts, sDim.Render(" · "))
+		if lipgloss.Width(line) <= width {
+			break
+		}
+	}
+	return line
 }
 
 func (m *model) handleNet(n netInfo) {
@@ -243,9 +326,23 @@ func (m *model) layout() layout {
 	return l
 }
 
+func (m *model) header(title string, width int) string {
+	t := sBright.Render(title)
+	elapsed := sDim.Render(fmtElapsed(time.Since(m.start)))
+	gap := max(1, width-lipgloss.Width(t)-lipgloss.Width(elapsed))
+	return t + strings.Repeat(" ", gap) + elapsed + "\n\n"
+}
+
 func (m *model) View() string {
 	var b strings.Builder
 	l := m.layout()
+
+	if m.showHelp {
+		b.WriteString(m.header("gotnet · help", defaultW))
+		b.WriteString(legend())
+		b.WriteString("\n" + sDim.Render("any key to return · monitoring continues"))
+		return b.String()
+	}
 
 	termW := m.width
 	if termW == 0 {
@@ -254,11 +351,7 @@ func (m *model) View() string {
 	chain := m.viewChain(termW)
 	width := max(l.width, lipgloss.Width(chain))
 
-	elapsed := sDim.Render(fmtElapsed(time.Since(m.start)))
-	title := sBright.Render("gotnet")
-	gap := max(1, width-lipgloss.Width(title)-lipgloss.Width(elapsed))
-	b.WriteString(title + strings.Repeat(" ", gap) + elapsed + "\n\n")
-
+	b.WriteString(m.header("gotnet", width))
 	b.WriteString(chain + "\n\n")
 
 	cols := padL("p50", numW)
@@ -271,7 +364,7 @@ func (m *model) View() string {
 		b.WriteString(m.viewRow(t, l) + "\n")
 	}
 
-	b.WriteString("\n")
+	b.WriteString("\n" + m.viewSession(max(l.width, termW)) + "\n")
 	if len(m.events) == 0 {
 		b.WriteString(sFaint.Render("No events yet") + "\n")
 	}
@@ -281,7 +374,7 @@ func (m *model) View() string {
 			sText.Render(padR(e.target, 9)), sText.Render(e.text))
 	}
 
-	b.WriteString("\n" + sDim.Render("q quit · r reset"))
+	b.WriteString("\n" + sDim.Render("q quit · r reset · h help"))
 	return b.String()
 }
 

@@ -235,6 +235,15 @@ func median(xs []float64) float64 {
 	return c[m]
 }
 
+// percentile uses the nearest-rank method: the smallest value with at least
+// p% of samples at or below it.
+func percentile(xs []float64, p float64) float64 {
+	c := append([]float64(nil), xs...)
+	sort.Float64s(c)
+	i := int(math.Ceil(p/100*float64(len(c)))) - 1
+	return c[max(0, min(i, len(c)-1))]
+}
+
 func minOf(xs []float64) float64 {
 	m := xs[0]
 	for _, x := range xs[1:] {

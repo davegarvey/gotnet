@@ -14,12 +14,12 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-const version = "0.1.0"
+const version = "0.2.0"
 
-const help = `gotnet: is it me or them, and is it stable?
+const usage = `gotnet: is it me or them, and is it stable?
 
 Usage:
-  gotnet            start monitoring (q quits, r resets)
+  gotnet            start monitoring (q quits, r resets, h shows help)
   gotnet --help     show this help
   gotnet --version  show the version
 
@@ -30,22 +30,9 @@ Probes, once a second:
   Web       HTTP request to cp.cloudflare.com (detects captive portals)
 A probe with no reply within 900 ms (2 s for Web) counts as lost.
 
-Chain (top line):
-  ●  green   healthy
-  ◐  amber   degraded: recent loss, 2%+ loss, or Internet jitter over 30 ms
-  ✕  red     down: the last three probes failed; the problem starts here
-  ✕  faint   down because of an earlier failure
-  ○  grey    no result yet, or not applicable
-The Wi-Fi node turns amber below -75 dBm.
+`
 
-Heatmap (one cell per second, relative to that row's best time):
-  █  green   close to normal
-  █  amber   noticeably slower
-  █  orange  spike
-  ×  red     lost
-  ·  faint   no data yet
-
-p50, jitter and loss cover the seconds shown in the heatmap.
+const usageFooter = `
 On exit, a summary of the whole session is printed.
 Set NO_COLOR=1 to turn colour off.
 `
@@ -59,7 +46,7 @@ func main() {
 	err := fs.Parse(os.Args[1:])
 	switch {
 	case errors.Is(err, flag.ErrHelp):
-		fmt.Print(help)
+		fmt.Print(usage + legend() + usageFooter)
 		return
 	case err != nil:
 		fail(err.Error())
@@ -87,14 +74,23 @@ func main() {
 // terminal's scrollback after the alternate screen is gone.
 func summary(m *model) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "gotnet · %s\n", time.Since(m.start).Round(time.Second))
+	header := "no outages"
+	if count, down, _ := m.sessionOutages(); count > 0 {
+		plural := "s"
+		if count == 1 {
+			plural = ""
+		}
+		header = fmt.Sprintf("%d outage%s, %s down", count, plural, fmtDur(down))
+	}
+	fmt.Fprintf(&b, "gotnet · %s · %s\n", time.Since(m.start).Round(time.Second), header)
 	for t := range numTargets {
 		s := m.series[t]
 		if s.sent == 0 {
 			continue
 		}
-		line := fmt.Sprintf("  %-9s p50 %-6s jitter %-6s loss %.1f%%",
-			targetNames[t], fmtMs(median(orZero(s.sessionRTTs))),
+		rtts := orZero(s.sessionRTTs)
+		line := fmt.Sprintf("  %-9s p50 %-6s p95 %-6s jitter %-6s loss %.1f%%",
+			targetNames[t], fmtMs(median(rtts)), fmtMs(percentile(rtts, 95)),
 			fmtMs(s.jitterSum/float64(max(1, s.jitterN))),
 			100*float64(s.lost)/float64(s.sent))
 		if s.outages > 0 {
