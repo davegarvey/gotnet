@@ -1,4 +1,4 @@
-module gotnet
+module github.com/davegarvey/gotnet
 
 go 1.26.5
 

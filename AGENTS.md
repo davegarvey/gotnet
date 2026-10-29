@@ -26,7 +26,8 @@ or build flags.
   that break documented behaviour (flags, exit codes, summary format).
 - Bump the constant in the same change as the work it describes, not
   separately afterwards.
-- If the project later adopts git tags, keep the tag and the constant in step.
+- Releases are tagged `vX.Y.Z` to match the constant, so `go install ...@latest`
+  picks them up. Tag the commit that carries the bumped constant.
 
 ## Code notes
 

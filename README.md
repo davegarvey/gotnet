@@ -3,9 +3,13 @@
 A small macOS terminal tool for answering two questions when the internet feels
 broken: is it me or them, and is it stable?
 
+Install (macOS, Go 1.26+ and the Xcode command line tools):
+
 ```
-go build -o gotnet . && ./gotnet
+go install github.com/davegarvey/gotnet@latest
 ```
+
+Or from a clone: `go build -o gotnet . && ./gotnet`.
 
 The top line is a chain from this Mac to the web. Each node is green (`●`),
 degraded (`◐`), down (`✕`) or waiting for its first result (`○`). Only the
@@ -32,3 +36,7 @@ unavailable it falls back to timing a TCP handshake. Probes run once a second
 and a reply slower than 900 ms (2 s for Web) counts as lost.
 
 Keys: `q` quit, `r` reset, `h` (or `?`) help, which shows the colour legend without leaving the session. `gotnet --help` prints the same legend; set `NO_COLOR=1` to turn colour off.
+
+## Licence
+
+MIT. See [LICENSE](LICENSE).
