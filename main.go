@@ -14,27 +14,40 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-const version = "0.2.0"
+const version = "0.2.1"
 
-const usage = `gotnet: is it me or them, and is it stable?
+// The help text follows clig.dev: purpose first, then usage, flags, keys
+// and probes; the shared colour legend; then environment, exit status and
+// where to find the source.
+const usage = `gotnet shows, layer by layer, whether this Mac can reach the internet and
+how stable the connection is.
 
 Usage:
-  gotnet            start monitoring (q quits, r resets, h shows help)
-  gotnet --help     show this help
-  gotnet --version  show the version
+  gotnet [flags]
 
-Probes, once a second:
+Flags:
+  -h, --help     show this help
+  -v, --version  show the version
+
+Keys:
+  q   quit and print a session summary
+  r   reset history
+  h   show this legend in the app (also ?)
+
+Probes, once a second (no reply within 900 ms, or 2 s for Web, counts as lost):
   Router    ping to your default gateway
   Internet  ping to 1.1.1.1
   DNS       lookup sent directly to your configured DNS server
-  Web       HTTP request to cp.cloudflare.com (detects captive portals)
-A probe with no reply within 900 ms (2 s for Web) counts as lost.
+  Web       HTTP request to cp.cloudflare.com, to detect captive portals
 
 `
 
 const usageFooter = `
-On exit, a summary of the whole session is printed.
-Set NO_COLOR=1 to turn colour off.
+Environment:
+  NO_COLOR   set to any value to turn colour off
+
+Exit status: 0 success, 1 error, 2 usage error.
+Source and issues: https://github.com/davegarvey/gotnet
 `
 
 func main() {

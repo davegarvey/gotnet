@@ -191,7 +191,8 @@ const (
 	stateDown
 )
 
-// jitterLimit is roughly where real-time audio and video start to suffer.
+// jitterLimit is a common guideline for real-time audio. How much jitter a
+// given call app tolerates varies with its buffering.
 const jitterLimit = 30.0
 
 func (s *series) state(t target, window int) nodeState {
@@ -200,10 +201,11 @@ func (s *series) state(t target, window int) nodeState {
 	if n == 0 {
 		return statePending
 	}
-	tail := min(3, n)
-	if n >= 2 {
+	// Down means in an outage, using the same threshold as the log, so the
+	// chain and the log never disagree.
+	if n >= minOutage {
 		allLost := true
-		for _, sm := range recent[n-tail:] {
+		for _, sm := range recent[n-minOutage:] {
 			if !sm.lost() {
 				allLost = false
 				break
