@@ -347,7 +347,7 @@ func (m *model) View() string {
 	l := m.layout()
 
 	if m.showHelp {
-		b.WriteString(m.header("gotnet · help", defaultW))
+		b.WriteString(m.header("gotnet "+version+" · help", defaultW))
 		b.WriteString(legend())
 		b.WriteString("\n" + sDim.Render("any key to return · monitoring continues"))
 		return b.String()
