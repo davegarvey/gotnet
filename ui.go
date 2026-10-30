@@ -52,15 +52,19 @@ type model struct {
 	net    netInfo
 	series [numTargets]*series
 	start  time.Time
+	// now is the time of the latest probe tick. On-screen clocks use it
+	// rather than the real time, because the screen also redraws whenever a
+	// result arrives, at uneven moments, which made them advance unevenly.
+	now time.Time
 
-	events    []*event // newest first
+	events    []*event           // newest first
 	openEvent [numTargets]*event // outage still in progress
 	// Session totals count outages as the log does: root causes only, so a
 	// Web outage during an Internet outage is not counted twice.
 	outages  int
 	downtime time.Duration
 	weak     bool
-	captive   bool
+	captive  bool
 
 	width, height int
 	showHelp      bool
@@ -77,7 +81,8 @@ type resultMsg struct {
 }
 
 func newModel(p *prober, n netInfo) *model {
-	m := &model{prober: p, net: n, start: time.Now(), width: 80}
+	now := time.Now()
+	m := &model{prober: p, net: n, start: now, now: now, width: 80}
 	for i := range m.series {
 		m.series[i] = &series{}
 	}
@@ -132,7 +137,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 	case tickMsg:
-		return m, tea.Batch(m.probeAll(time.Time(msg)), tick())
+		m.now = time.Time(msg)
+		return m, tea.Batch(m.probeAll(m.now), tick())
 	case resultMsg:
 		m.handleResult(msg)
 	case netTickMsg:
@@ -152,6 +158,7 @@ func (m *model) reset() {
 	m.openEvent = [numTargets]*event{}
 	m.outages, m.downtime = 0, 0
 	m.start = time.Now()
+	m.now = m.start
 }
 
 func (m *model) handleResult(r resultMsg) {
@@ -194,7 +201,7 @@ func (m *model) sessionOutages() (count int, down time.Duration, ongoing bool) {
 	for _, e := range m.openEvent {
 		if e != nil {
 			count++
-			down += time.Since(e.at)
+			down += max(0, m.now.Sub(e.at))
 			ongoing = true
 		}
 	}
@@ -328,7 +335,9 @@ func (m *model) layout() layout {
 
 func (m *model) header(title string, width int) string {
 	t := sBright.Render(title)
-	elapsed := sDim.Render(fmtElapsed(time.Since(m.start)))
+	// Ticks fall on whole seconds of the clock but the session started
+	// partway through one; rounding makes each tick advance by exactly one.
+	elapsed := sDim.Render(fmtElapsed(m.now.Sub(m.start).Round(time.Second)))
 	gap := max(1, width-lipgloss.Width(t)-lipgloss.Width(elapsed))
 	return t + strings.Repeat(" ", gap) + elapsed + "\n\n"
 }

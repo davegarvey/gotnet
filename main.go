@@ -14,7 +14,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-const version = "0.2.1"
+const version = "0.2.2"
 
 // The help text follows clig.dev: purpose first, then usage, flags, keys
 // and probes; the shared colour legend; then environment, exit status and
